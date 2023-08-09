@@ -5,10 +5,13 @@
 #define MQTT_SERVER "broker.emqx.io"
 #define MQTT_PORT 1883
 #define LOCK 15
+#define CONTACT 12
 
-String ledStatus1 = "ON";
+int s = 0;
+long lastRead = 0;
 
-#define MQTT_LOCK_RECIEVE "ESP32/LOCK_COMMAND"
+#define MQTT_LOCK_RECIEVE "ESP32/LOCK_COMMAND/Vanh-esp32"
+#define MQTT_STATUS_REQUEST "Get Vanh-esp32 status"
 
 #define MQTT_LOCK_PUBLISH "ESP32/LOCK_RESPONSE"
 
@@ -40,6 +43,7 @@ void connect_to_broker() {
     if (client.connect(clientId.c_str())) {
       Serial.println("connected");
       client.subscribe(MQTT_LOCK_RECIEVE);
+      client.subscribe(MQTT_STATUS_REQUEST);
     } else {
       Serial.print("failed, rc=");
       Serial.print(client.state());
@@ -65,24 +69,42 @@ void callback(char* topic, byte *payload, unsigned int length) {
   }
   Serial.println();
   Serial.println(status);
+  if(String(topic) == MQTT_STATUS_REQUEST)
+  {
+    Serial.print("Status:");
+    Serial.println(s);
+    if(s == 0)
+    {
+      client.publish(MQTT_LOCK_PUBLISH, "Vanh-esp32,OFF");
+      client.disconnect();
+    } 
+    else
+    {
+      client.publish(MQTT_LOCK_PUBLISH, "Vanh-esp32,ON");
+      client.disconnect();
+    } 
+  }
   if(String(topic) == MQTT_LOCK_RECIEVE)
   {
     if(String(status) == "OFF")
     {
       digitalWrite(LOCK, LOW);
+      s = 0;
       delay(500);
-      client.publish(MQTT_LOCK_PUBLISH, "OFF");
+      client.publish(MQTT_LOCK_PUBLISH, "Vanh-esp32,OFF");
+      client.disconnect();
       Serial.println("LOCKED");
     }
     else if(String(status) == "ON")
     {
       digitalWrite(LOCK, HIGH);
+      s = 1;
       delay(500);
-      client.publish(MQTT_LOCK_PUBLISH, "ON");
+      client.publish(MQTT_LOCK_PUBLISH, "Vanh-esp32,ON");
+      client.disconnect();
       Serial.println("UNLOCK");
     }
   }
-   
 }
 
 void setup() {
@@ -90,6 +112,7 @@ void setup() {
   while (!Serial);
 
   pinMode(LOCK, OUTPUT);
+  pinMode(CONTACT, INPUT_PULLUP);
   digitalWrite(LOCK, LOW);
   initWiFi();
 
@@ -98,7 +121,7 @@ void setup() {
   connect_to_broker();
   Serial.println("Start transfer");
 
-  
+  // client.publish("Create device", "");
 }
 
 void loop() {
@@ -106,4 +129,15 @@ void loop() {
   if (!client.connected()) {
     connect_to_broker();
   }
+  long now = millis();
+  // if (now - lastRead > 500) {
+  //   lastRead = now;
+    int contactState = digitalRead(CONTACT);
+    if(contactState == 0 && s == 1)
+    {
+      Serial.println("LOCK");
+      client.publish(MQTT_LOCK_RECIEVE, "OFF");
+      s = 0;
+    } 
+  // }
 }
